@@ -5,8 +5,9 @@
   "types": "./index.d.ts",
   "exports": {
     ".": {
-      "import": "./index.mjs",
-      "require": "./index.js"
-    }
+      "import": "./src/index.ts",
+      "require": "./dist/index.umd.cjs"
+    },
+    "./*": "./src/*"
   }
 }

@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 
-import { Panel } from '@front-experiments/ui';
 import {
   DR,
   MAX_TEMP,
@@ -81,10 +80,15 @@ export const HeatConduction2D = () => {
   }, [canvasRef]);
 
   return (
-    <div>
-      <Panel className="m-2 overflow-hidden p-0 inline-block">
-        <canvas ref={canvasRef} width={300} height={300}></canvas>
-      </Panel>
+    <div className="max-w-5xl mx-auto">
+      <div className="m-2 rounded-lg overflow-hidden border-[1px] border-slate-400">
+        <canvas
+          className="mx-auto"
+          ref={canvasRef}
+          width={300}
+          height={300}
+        ></canvas>
+      </div>
     </div>
   );
 };

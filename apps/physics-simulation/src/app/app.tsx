@@ -1,19 +1,33 @@
 import { Route, Routes, Link } from 'react-router-dom';
 
 import { routes } from './routes';
+import {
+  NavigationMenu,
+  NavigationMenuList,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  navigationMenuTriggerStyle,
+} from '@front-experiments/ui/components/ui/navigation-menu';
 
 export function App() {
   return (
-    <div>
-      <div role="navigation">
-        <ul>
+    <div className="max-w-5xl mx-auto">
+      <NavigationMenu className="p-1">
+        <NavigationMenuList>
           {routes.map((route) => (
-            <li key={route.path}>
-              <Link to={route.path}>{route.name}</Link>
-            </li>
+            <NavigationMenuItem key={route.path}>
+              <Link to={route.path}>
+                <NavigationMenuLink
+                  className={navigationMenuTriggerStyle()}
+                  asChild
+                >
+                  <span>{route.name}</span>
+                </NavigationMenuLink>
+              </Link>
+            </NavigationMenuItem>
           ))}
-        </ul>
-      </div>
+        </NavigationMenuList>
+      </NavigationMenu>
 
       <Routes>
         {routes.map((route) => (
@@ -27,5 +41,3 @@ export function App() {
     </div>
   );
 }
-
-export default App;

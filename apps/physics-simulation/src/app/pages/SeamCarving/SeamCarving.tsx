@@ -1,7 +1,8 @@
 import React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Panel } from '@front-experiments/ui';
+import { Input } from '@front-experiments/ui/components/ui/input';
+import { Label } from '@front-experiments/ui/components/ui/label';
 import { seamCarve } from './seamCarvingSim';
 import { copyMatrix } from './matrix';
 
@@ -127,7 +128,7 @@ export const SeamCarving = () => {
       ctx.putImageData(
         matrixToImage(carved, carved[0].length, carved.length),
         0,
-        0
+        0,
       );
       setRealWidth(d.width);
     };
@@ -137,32 +138,44 @@ export const SeamCarving = () => {
 
   return (
     <div>
-      <form>
-        <input type="file" onChange={onImageChange} />
-        <label>
-          <p>Seams to remove</p>
-          <input
+      <div className="max-w-3xl mx-auto">
+        <div>
+          <Label htmlFor="image">Image</Label>
+          <Input id="image" type="file" onChange={onImageChange} />
+        </div>
+
+        <div>
+          <Label htmlFor="seams-to-remove">Seams to remove</Label>
+          <Input
+            id="seams-to-remove"
             type="number"
             value={seamsToRemove}
             onChange={(e) =>
               setSeamsToRemove(Math.min(Number(e.target.value), width))
             }
           />
-        </label>
-      </form>
+        </div>
+      </div>
 
-      <div>
-        <p>
+      <div className="max-w-3xl mx-auto my-2">
+        <p className="text-sm text-slate-400">
           Image dimensions: {width}x{height}
         </p>
-        <p>
+        <p className="text-sm text-slate-400">
           Real image dimensions: {realWidth}x{height}
         </p>
       </div>
 
-      <Panel className="m-2 overflow-hidden p-0 inline-block">
-        <canvas ref={canvasRef} width={300} height={300}></canvas>
-      </Panel>
+      <div className="max-w-3xl mx-auto my-2">
+        <div className="overflow-hidden rounded-lg border-[1px] border-slate-400">
+          <canvas
+            ref={canvasRef}
+            width={300}
+            height={300}
+            className="mx-auto"
+          ></canvas>
+        </div>
+      </div>
     </div>
   );
 };

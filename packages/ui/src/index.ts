@@ -1,4 +1,7 @@
-import './lib/styles.css';
+import './styles.css';
 
-export * from './lib/button/button';
-export * from './lib/panel/panel';
+export * from './utils';
+
+export * from './components/ui/button';
+export * from './components/ui/navigation-menu';
+export * from './components/panel/panel';

@@ -3,22 +3,25 @@
   "compilerOptions": {
     "rootDir": ".",
     "sourceMap": true,
-    "declaration": false,
     "moduleResolution": "node",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
     "importHelpers": true,
     "target": "es2015",
     "module": "esnext",
     "lib": ["es2020", "dom"],
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
-    "baseUrl": ".",
+    "baseUrl": "./",
     "paths": {
-      "@front-experiments/ui": ["packages/ui/src/index.ts"],
       "@front-experiments/tailwind-preset": [
-        "packages/tailwind-preset/tailwind.config.js"
-      ]
+        "./packages/tailwind-preset/tailwind.config.js"
+      ],
+      "@front-experiments/ui": ["./packages/ui/src/index.ts"],
+      "@front-experiments/ui/*": ["./packages/ui/src/*"]
     }
   },
   "exclude": ["node_modules", "tmp"]
