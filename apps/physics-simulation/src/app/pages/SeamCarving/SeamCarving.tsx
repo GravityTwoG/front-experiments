@@ -1,14 +1,69 @@
+import React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Panel } from '@front-experiments/ui';
+import { seamCarve } from './seamCarvingSim';
+import { copyMatrix } from './matrix';
+
+const imageDataToMatrix = (img: ImageData) => {
+  const width = img.width;
+  const height = img.height;
+  const matrix = new Array<number[]>(height);
+  for (let y = 0; y < height; ++y) {
+    matrix[y] = new Array<number>(width);
+    for (let x = 0; x < width; ++x) {
+      const i = (y * width + x) * 4;
+
+      const r = img.data[i];
+      const g = img.data[i + 1];
+      const b = img.data[i + 2];
+      const a = img.data[i + 3];
+
+      matrix[y][x] =
+        (r & 0xff) +
+        ((g & 0xff) << 8) +
+        ((b & 0xff) << 16) +
+        ((a & 0xff) << 24);
+    }
+  }
+  return matrix;
+};
+
+const matrixToImage = (matrix: number[][], width: number, height: number) => {
+  const img = new ImageData(width, height);
+  for (let y = 0; y < height; ++y) {
+    for (let x = 0; x < width; ++x) {
+      const i = (y * width + x) * 4;
+
+      img.data[i] = matrix[y][x] & 0xff;
+      img.data[i + 1] = (matrix[y][x] >> 8) & 0xff;
+      img.data[i + 2] = (matrix[y][x] >> 16) & 0xff;
+      img.data[i + 3] = (matrix[y][x] >> 24) & 0xff;
+      img.data[i + 3] = 255;
+    }
+  }
+  return img;
+};
+
+const fileToImage = (file: File) => {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+};
 
 export const SeamCarving = () => {
-  const [image, setImage] = useState<File | undefined>(undefined);
-  const [width, setWidth] = useState(0);
-  const [height, setHeight] = useState(0);
-
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const [image, setImage] = useState<number[][]>([]);
+  const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
+  const [realWidth, setRealWidth] = useState(0);
+  const [seamsToRemove, setSeamsToRemove] = useState<number>(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -24,49 +79,86 @@ export const SeamCarving = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }, [canvasRef]);
 
-  useEffect(() => {
+  const onImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const image = e.target.files?.[0];
     if (image === undefined) {
       return;
     }
-    const img = new Image();
-    img.src = URL.createObjectURL(image);
 
-    img.onload = () => {
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (canvas === null || ctx === null) {
+      return;
+    }
+
+    const img = await fileToImage(image);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(img.src);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    const matrix = imageDataToMatrix(imageData);
+    setWidth(matrix[0].length);
+    setHeight(matrix.length);
+    setRealWidth(matrix[0].length);
+    setSeamsToRemove(0);
+    setImage(matrix);
+  };
+
+  useEffect(() => {
+    const carve = () => {
       const canvas = canvasRef.current;
       const ctx = ctxRef.current;
       if (canvas === null || ctx === null) {
         return;
       }
+      if (image.length === 0) {
+        return;
+      }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageCopy = copyMatrix(image);
+      const d = seamCarve(imageCopy, seamsToRemove);
 
-      setWidth(img.width);
-      setHeight(img.height);
+      const carved = d.img;
+      canvas.width = d.width;
+      ctx.putImageData(
+        matrixToImage(carved, carved[0].length, carved.length),
+        0,
+        0
+      );
+      setRealWidth(d.width);
     };
-  }, [canvasRef, ctxRef, image]);
+
+    carve();
+  }, [image, seamsToRemove]);
 
   return (
     <div>
       <form>
-        <input type="file" onChange={(e) => setImage(e.target.files?.[0])} />
+        <input type="file" onChange={onImageChange} />
         <label>
-          <p>Width</p>
+          <p>Seams to remove</p>
           <input
             type="number"
-            value={width}
-            onChange={(e) => setWidth(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          <p>Height</p>
-          <input
-            type="number"
-            value={height}
-            onChange={(e) => setHeight(Number(e.target.value))}
+            value={seamsToRemove}
+            onChange={(e) =>
+              setSeamsToRemove(Math.min(Number(e.target.value), width))
+            }
           />
         </label>
       </form>
+
+      <div>
+        <p>
+          Image dimensions: {width}x{height}
+        </p>
+        <p>
+          Real image dimensions: {realWidth}x{height}
+        </p>
+      </div>
 
       <Panel className="m-2 overflow-hidden p-0 inline-block">
         <canvas ref={canvasRef} width={300} height={300}></canvas>

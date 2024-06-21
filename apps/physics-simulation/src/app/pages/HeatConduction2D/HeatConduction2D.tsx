@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { Button, Panel } from '@front-experiments/ui';
+import { Panel } from '@front-experiments/ui';
 import {
   DR,
   MAX_TEMP,
@@ -8,9 +8,14 @@ import {
   updateState,
 } from './heatConductionSim';
 
+const countTime = (name: string, cb: () => void) => {
+  const start = performance.now();
+  cb();
+  console.log(`[${name}] elapsed: ${performance.now() - start}`);
+};
+
 export const HeatConduction2D = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [intervalId, setIntervalId] = useState<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,63 +27,61 @@ export const HeatConduction2D = () => {
       return;
     }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     let state = getStartingState(canvas.width, canvas.height);
     let nextState = getStartingState(canvas.width, canvas.height);
 
+    const brightnessPerTemp = 255 / MAX_TEMP;
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = 'black';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       for (let y = 0; y < state.length; y++) {
+        const yDR = y * DR;
         for (let x = 0; x < state[y].length; x++) {
-          const brightness = (state[y][x] / MAX_TEMP) * 255;
+          const brightness = state[y][x] * brightnessPerTemp;
 
           ctx.fillStyle = `rgb(${brightness}, ${brightness / 3}, ${
             255 - brightness
           })`;
-          ctx.fillRect(x * DR, y * DR, DR, DR);
+          ctx.fillRect(x * DR, yDR, DR, DR);
         }
       }
     };
+    draw();
 
-    const intervalId = setInterval(() => {
-      draw();
-      for (let i = 0; i < 100; i++) {
-        updateState(state, nextState);
+    const update = () => {
+      const now = performance.now();
+      const deltaTime = now - lastTime;
+      lastTime = now;
+      console.log(`deltaTime: ${deltaTime}, fps: ${1000 / deltaTime}`);
 
-        const tmp = state;
-        state = nextState;
-        nextState = tmp;
+      countTime('update', () => {
+        for (let i = 0; i < 10; i++) {
+          updateState(state, nextState, 0.1);
+
+          [state, nextState] = [nextState, state];
+        }
+      });
+
+      countTime('draw', () => draw());
+
+      if (isRunning) {
+        requestAnimationFrame(update);
       }
-    }, 10) as unknown as number;
-    setIntervalId(intervalId);
+    };
+
+    let isRunning = true;
+    let lastTime = performance.now();
+    requestAnimationFrame(update);
 
     return () => {
-      clearInterval(intervalId);
+      isRunning = false;
     };
   }, [canvasRef]);
 
-  const onStart = () => {
-    console.log('start');
-  };
-
-  const onStop = () => {
-    console.log('stop');
-    if (intervalId !== null) {
-      clearInterval(intervalId);
-    }
-  };
-
   return (
     <div>
-      <div>
-        <Button onClick={onStart}>Start</Button>
-        <Button onClick={onStop}>Stop</Button>
-      </div>
-
       <Panel className="m-2 overflow-hidden p-0 inline-block">
         <canvas ref={canvasRef} width={300} height={300}></canvas>
       </Panel>

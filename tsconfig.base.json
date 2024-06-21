@@ -15,7 +15,10 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@front-experiments/ui": ["packages/ui/src/index.ts"]
+      "@front-experiments/ui": ["packages/ui/src/index.ts"],
+      "@front-experiments/tailwind-preset": [
+        "packages/tailwind-preset/tailwind.config.js"
+      ]
     }
   },
   "exclude": ["node_modules", "tmp"]
