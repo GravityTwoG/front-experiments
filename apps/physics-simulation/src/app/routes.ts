@@ -1,10 +1,10 @@
-import { HeatConduction2D } from './pages/HeatConduction2D/HeatConduction2D';
+import { HeatConductionWidget } from './pages/HeatConductionWidget/HeatConductionWidget';
 import { SeamCarving } from './pages/SeamCarving/SeamCarving';
 
 export const routes = [
   {
     path: '/',
-    component: HeatConduction2D,
+    component: HeatConductionWidget,
     name: 'Heat Conduction 2D',
   },
   {
