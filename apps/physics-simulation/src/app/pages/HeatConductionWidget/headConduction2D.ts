@@ -2,9 +2,9 @@ import { getDevice } from './utils';
 
 export class HeatConduction2D {
   // Constants
-  private DR = 1;
-  private A = 1.5;
-  private MAX_TEMP = 6000;
+  private DR: number;
+  private A: number;
+  private MAX_TEMP: number;
 
   private width: number;
   private height: number;
@@ -23,7 +23,11 @@ export class HeatConduction2D {
   private currentBindGroupIndex = 0;
   private bindGroups: GPUBindGroup[] = [];
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, dr = 1, a = 1.5, maxTemp = 6000) {
+    this.DR = dr;
+    this.A = a;
+    this.MAX_TEMP = maxTemp;
+
     this.width = Math.trunc(width / this.DR);
     this.height = Math.trunc(height / this.DR);
   }
@@ -117,10 +121,10 @@ export class HeatConduction2D {
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const index = y * this.width + x;
-        if (this.isInShape(x, y) && x > this.width / 2) {
+        if (this.isInShape(x, y) && y - x < 0) {
           state[index] = (Math.random() + 1) * this.MAX_TEMP;
         } else if (this.isInShape(x, y)) {
-          state[index] = this.MAX_TEMP / 10;
+          state[index] = this.MAX_TEMP / 2;
         } else {
           state[index] = 0;
         }
@@ -191,6 +195,9 @@ export class HeatConduction2D {
 
     // Ensure we're within the simulation grid
     if (x >= uniforms.width || y >= uniforms.height) {
+      return;
+    }
+    if (!isInShape(x, y)) {
       return;
     }
 
