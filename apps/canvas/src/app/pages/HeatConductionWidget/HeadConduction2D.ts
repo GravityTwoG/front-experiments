@@ -9,38 +9,66 @@ export class HeatConduction2D {
   private width: number;
   private height: number;
 
+  private format: GPUTextureFormat;
+  private context: GPUCanvasContext;
+
   private device: GPUDevice = null!;
   private computePipeline: GPUComputePipeline = null!;
 
   private uniformBuffer: GPUBuffer = null!;
 
-  private bufferSize = 0;
+  private alignedBufferSize: number;
+
   private inputBuffer: GPUBuffer = null!;
   private outputBuffer: GPUBuffer = null!;
 
-  private readBuffer: GPUBuffer = null!;
-
   private currentBindGroupIndex = 0;
-  private bindGroups: GPUBindGroup[] = [];
+  private computeBindGroups: GPUBindGroup[] = [];
 
-  constructor(width: number, height: number, dr = 1, a = 1.5, maxTemp = 6000) {
+  private renderPipeline: GPURenderPipeline = null!;
+  private renderBindGroup: GPUBindGroup = null!;
+
+  constructor(
+    context: GPUCanvasContext,
+    width: number,
+    height: number,
+    dr = 1,
+    a = 1.5,
+    maxTemp = 6000,
+  ) {
+    this.format = navigator.gpu.getPreferredCanvasFormat();
+    this.context = context;
+
     this.DR = dr;
     this.A = a;
     this.MAX_TEMP = maxTemp;
 
-    this.width = Math.trunc(width / this.DR);
+    const bytesPerElement = 4;
+    this.width =
+      (Math.ceil((Math.trunc(width / this.DR) * bytesPerElement) / 256) * 256) /
+      bytesPerElement;
     this.height = Math.trunc(height / this.DR);
+
+    this.alignedBufferSize = this.width * this.height * bytesPerElement;
   }
 
   async init() {
     this.device = await getDevice();
 
-    // Create buffers
+    this.context.configure({
+      device: this.device,
+      format: this.format,
+    });
+
+    this.initComputePipeline();
+    this.initRenderPipeline();
+  }
+
+  private initComputePipeline() {
     const initialState = this.getInitialState();
-    this.bufferSize = initialState.byteLength;
 
     this.inputBuffer = this.device.createBuffer({
-      size: this.bufferSize,
+      size: this.alignedBufferSize,
       usage:
         GPUBufferUsage.STORAGE |
         GPUBufferUsage.COPY_DST |
@@ -48,7 +76,7 @@ export class HeatConduction2D {
     });
 
     this.outputBuffer = this.device.createBuffer({
-      size: this.bufferSize,
+      size: this.alignedBufferSize,
       usage:
         GPUBufferUsage.STORAGE |
         GPUBufferUsage.COPY_DST |
@@ -68,14 +96,9 @@ export class HeatConduction2D {
     new Float32Array(uniformData, 8, 1)[0] = dt;
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-    this.readBuffer = this.device.createBuffer({
-      size: this.bufferSize,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-
     // Create shader module for the compute shader
     const shaderModule = this.device.createShaderModule({
-      code: this.getShaderCode(),
+      code: this.getComputeShaderCode(),
     });
 
     // Create compute pipeline
@@ -89,13 +112,49 @@ export class HeatConduction2D {
 
     // Create initial bind groups
     this.currentBindGroupIndex = 0;
-    this.bindGroups = [
-      this.createBindGroup(this.inputBuffer, this.outputBuffer),
-      this.createBindGroup(this.outputBuffer, this.inputBuffer),
+    this.computeBindGroups = [
+      this.createComputeBindGroup(this.inputBuffer, this.outputBuffer),
+      this.createComputeBindGroup(this.outputBuffer, this.inputBuffer),
     ];
   }
 
-  private createBindGroup(inputBuffer: GPUBuffer, outputBuffer: GPUBuffer) {
+  private initRenderPipeline() {
+    // Create render pipeline
+    const renderShaderModule = this.device.createShaderModule({
+      code: this.getRenderShaderCode(),
+    });
+
+    this.renderPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: renderShaderModule,
+        entryPoint: 'vertexMain',
+        buffers: [],
+      },
+      fragment: {
+        module: renderShaderModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: this.format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+      },
+    });
+
+    // Create render bind group
+    this.renderBindGroup = this.device.createBindGroup({
+      layout: this.renderPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.inputBuffer } },
+        { binding: 1, resource: { buffer: this.uniformBuffer } },
+      ],
+    });
+  }
+
+  private createComputeBindGroup(
+    inputBuffer: GPUBuffer,
+    outputBuffer: GPUBuffer,
+  ) {
     return this.device.createBindGroup({
       layout: this.computePipeline.getBindGroupLayout(0),
       entries: [
@@ -124,10 +183,12 @@ export class HeatConduction2D {
       for (let x = 0; x < this.width; x++) {
         const index = y * this.width + x;
 
-        if (this.isInShape(x, y) && y > fn(x)) {
-          state[index] = (Math.random() + 1) * this.MAX_TEMP;
-        } else if (this.isInShape(x, y)) {
-          state[index] = this.MAX_TEMP * 0.6;
+        if (this.isInShape(x, y)) {
+          if (y > fn(x)) {
+            state[index] = Math.random() * this.MAX_TEMP;
+          } else {
+            state[index] = this.MAX_TEMP * 0.9;
+          }
         } else {
           state[index] = 0;
         }
@@ -136,80 +197,143 @@ export class HeatConduction2D {
     return state;
   }
 
-  private getShaderCode = () => `
-  // Input buffer containing the current temperature state
-  @group(0) @binding(0) var<storage, read> input: array<f32>;
-  
-  // Output buffer to store the updated temperature state
-  @group(0) @binding(1) var<storage, read_write> output: array<f32>;
-
-  // Uniform buffer to store simulation parameters
-  struct Uniforms {
-    width: u32,   // Width of the simulation grid
-    height: u32,  // Height of the simulation grid
-    dt: f32,      // Time step for the simulation
-  }
-  @group(0) @binding(2) var<uniform> uniforms: Uniforms;
-
-  // Constants for the heat equation
-  const DR: f32 = ${this.DR};  // Spatial discretization
-  const A: f32 = ${this.A};    // Thermal diffusivity
-
-  // Function to calculate the 1D index from 2D coordinates
-  fn getIndex(x: u32, y: u32) -> u32 {
-    return y * uniforms.width + x;
-  }
-
-  fn isInShape(x: u32, y: u32) -> bool {
-    return (
-      x > uniforms.width / 4 &&
-      x < (3 * uniforms.width) / 4 &&
-      y > uniforms.height / 4 &&
-      y < (3 * uniforms.height) / 4
-    );
-  }
-
-  fn getTemp(cx: u32, cy: u32, x: u32, y: u32) -> f32 {
-    if (isInShape(x, y)) {
-      return input[getIndex(x, y)];
-    } else {
-      return input[getIndex(cx, cy)];
-    }
-  }
-
-  // Function to calculate the change in temperature for a given cell
-  fn dTemp(x: u32, y: u32) -> f32 {
-    let curr = input[getIndex(x, y)];
+  private getComputeShaderCode = () => `
+    // Input buffer containing the current temperature state
+    @group(0) @binding(0) var<storage, read> input: array<f32>;
     
-    let top = getTemp(x, y, x, y - 1);
-    let bottom = getTemp(x, y, x, y + 1);
-    let left = getTemp(x, y, x - 1, y);
-    let right = getTemp(x, y, x + 1, y);
+    // Output buffer to store the updated temperature state
+    @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
-    // Calculate and return the change in temperature
-    return (A * (top + bottom + left + right - 4.0 * curr)) / (DR * DR);
-  }
-
-  // compute shader
-  @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let x = global_id.x;
-    let y = global_id.y;
-
-    // Ensure we're within the simulation grid
-    if (x >= uniforms.width || y >= uniforms.height) {
-      return;
+    // Uniform buffer to store simulation parameters
+    struct Uniforms {
+      width: u32,   // Width of the simulation grid
+      height: u32,  // Height of the simulation grid
+      dt: f32,      // Time step for the simulation
     }
-    if (!isInShape(x, y)) {
-      return;
+    @group(0) @binding(2) var<uniform> uniforms: Uniforms;
+
+    // Constants for the heat equation
+    const DR: f32 = ${this.DR};  // Spatial discretization
+    const A: f32 = ${this.A};    // Thermal diffusivity
+
+    // Function to calculate the 1D index from 2D coordinates
+    fn getIndex(x: u32, y: u32) -> u32 {
+      return y * uniforms.width + x;
     }
 
-    let index = getIndex(x, y);
+    fn isInShape(x: u32, y: u32) -> bool {
+      return (
+        x > uniforms.width / 4 &&
+        x < (3 * uniforms.width) / 4 &&
+        y > uniforms.height / 4 &&
+        y < (3 * uniforms.height) / 4
+      );
+    }
 
-    // Update the temperature using the heat equation
-    output[index] = input[index] + dTemp(x, y) * uniforms.dt;
-  }
-`;
+    fn getTemp(cx: u32, cy: u32, x: u32, y: u32) -> f32 {
+      if (isInShape(x, y)) {
+        return input[getIndex(x, y)];
+      } else {
+        return input[getIndex(cx, cy)];
+      }
+    }
+
+    // Function to calculate the change in temperature for a given cell
+    fn dTemp(x: u32, y: u32) -> f32 {
+      let curr = input[getIndex(x, y)];
+      
+      let top = getTemp(x, y, x, y - 1);
+      let bottom = getTemp(x, y, x, y + 1);
+      let left = getTemp(x, y, x - 1, y);
+      let right = getTemp(x, y, x + 1, y);
+
+      // Calculate and return the change in temperature
+      return (A * (top + bottom + left + right - 4.0 * curr)) / (DR * DR);
+    }
+
+    // compute shader
+    @compute @workgroup_size(16, 16)
+    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+      let x = global_id.x;
+      let y = global_id.y;
+
+      // Ensure we're within the simulation grid
+      if (x >= uniforms.width || y >= uniforms.height) {
+        return;
+      }
+      if (!isInShape(x, y)) {
+        return;
+      }
+
+      let index = getIndex(x, y);
+
+      // Update the temperature using the heat equation
+      output[index] = input[index] + dTemp(x, y) * uniforms.dt;
+    }
+  `;
+
+  private getRenderShaderCode = () => `
+    // Uniform buffer to store simulation parameters
+    struct Uniforms {
+      width: u32,   // Width of the simulation grid
+      height: u32,  // Height of the simulation grid
+      dt: f32,      // Time step for the simulation
+    }
+
+    struct VertexOutput {
+      @builtin(position) position: vec4f,
+      @location(0) texCoord: vec2f,
+    };
+
+    @vertex
+    fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+      var pos = array<vec2f, 6>(
+        vec2f(-1.0, -1.0),
+        vec2f(1.0, -1.0),
+        vec2f(1.0, 1.0),
+        vec2f(-1.0, -1.0),
+        vec2f(1.0, 1.0),
+        vec2f(-1.0, 1.0)
+      );
+
+      var texCoord = array<vec2f, 6>(
+        vec2f(0.0, 1.0),
+        vec2f(1.0, 1.0),
+        vec2f(1.0, 0.0),
+        vec2f(0.0, 1.0),
+        vec2f(1.0, 0.0),
+        vec2f(0.0, 0.0)
+      );
+
+      var output: VertexOutput;
+      output.position = vec4f(pos[vertexIndex], 0.0, 1.0);
+      output.texCoord = texCoord[vertexIndex];
+      return output;
+    }
+
+    @group(0) @binding(0) var<storage, read> data: array<f32>;
+    @group(0) @binding(1) var<uniform> uniforms: Uniforms;
+
+    @fragment
+    fn fragmentMain(@location(0) coords: vec2f) -> @location(0) vec4f {
+      let x: u32 = u32(coords.x * f32(uniforms.width));
+      let y: u32 = u32(coords.y * f32(uniforms.height));
+
+      let temp = data[y * uniforms.width + x];
+      let color = tempToColor(temp);
+      return vec4f(color, 1.0);
+    }
+
+    fn tempToColor(temp: f32) -> vec3f {
+      let maxTemp: f32 = ${this.MAX_TEMP};
+      let normalizedTemp = clamp(temp / maxTemp, 0.0, 1.0);
+      if (normalizedTemp < 0.5) {
+        return vec3f(0.0, 0.0, normalizedTemp * 2.0);
+      } else {
+        return vec3f((normalizedTemp - 0.5) * 2.0, 0.0, (1.0 - normalizedTemp) * 2.0);
+      }
+    }
+  `;
 
   // Main function to set up and run the simulation
   async runSimulation(numSteps: number) {
@@ -222,7 +346,10 @@ export class HeatConduction2D {
     const workgroupsY = Math.ceil(this.height / 16);
 
     for (let i = 0; i < numSteps; i++) {
-      passEncoder.setBindGroup(0, this.bindGroups[this.currentBindGroupIndex]);
+      passEncoder.setBindGroup(
+        0,
+        this.computeBindGroups[this.currentBindGroupIndex],
+      );
       passEncoder.dispatchWorkgroups(workgroupsX, workgroupsY);
 
       // Toggle between 0 and 1 for next iteration
@@ -230,56 +357,28 @@ export class HeatConduction2D {
     }
 
     passEncoder.end();
-
-    // Read back the result
-    commandEncoder.copyBufferToBuffer(
-      this.inputBuffer,
-      0,
-      this.readBuffer,
-      0,
-      this.bufferSize,
-    );
-
     const gpuCommands = commandEncoder.finish();
     this.device.queue.submit([gpuCommands]);
-
-    await this.readBuffer.mapAsync(GPUMapMode.READ);
-    const resultArrayBuffer = this.readBuffer.getMappedRange();
-    const resultArray = new Float32Array(resultArrayBuffer.slice(0));
-    this.readBuffer.unmap();
-
-    return resultArray;
   }
 
-  renderHeatMap(data: Float32Array, ctx: CanvasRenderingContext2D) {
-    // Create an ImageData object
-    const imageData = ctx.createImageData(this.width, this.height);
+  render() {
+    const commandEncoder = this.device.createCommandEncoder();
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.context.getCurrentTexture().createView(),
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        },
+      ],
+    });
 
-    // Fill the ImageData
-    for (let i = 0; i < data.length; i++) {
-      const [r, g, b] = this.tempToColor(data[i]);
-      const pixelIndex = i * 4;
-      imageData.data[pixelIndex] = r;
-      imageData.data[pixelIndex + 1] = g;
-      imageData.data[pixelIndex + 2] = b;
-      imageData.data[pixelIndex + 3] = 255; // Full opacity
-    }
+    renderPass.setPipeline(this.renderPipeline);
+    renderPass.setBindGroup(0, this.renderBindGroup);
+    renderPass.draw(6);
+    renderPass.end();
 
-    // Put the ImageData on the canvas
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-  private tempToColor(temp: number): [number, number, number] {
-    const normalizedTemp = Math.min(Math.max(temp / this.MAX_TEMP, 0), 1);
-
-    if (normalizedTemp < 0.5) {
-      return [0, 0, Math.floor(normalizedTemp * 2 * 255)];
-    } else {
-      return [
-        Math.floor((normalizedTemp - 0.5) * 2 * 255),
-        0,
-        Math.floor((1 - normalizedTemp) * 2 * 255),
-      ];
-    }
+    this.device.queue.submit([commandEncoder.finish()]);
   }
 }

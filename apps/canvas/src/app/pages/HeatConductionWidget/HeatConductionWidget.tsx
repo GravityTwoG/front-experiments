@@ -5,16 +5,16 @@ import { Container } from '@front-experiments/ui/components/ui/Container';
 
 import { HeatConduction2D } from './HeadConduction2D';
 
-const width = 600;
-const height = 300;
-const numSteps = 10;
+const width = 1200;
+const height = 600;
+const numSteps = 20;
 const dr = 1;
 const a = 0.5;
 const maxTemp = 6000;
 
 export const HeatConductionWidget = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const ctxRef = useRef<GPUCanvasContext | null>(null);
 
   const simulation = useRef<HeatConduction2D | null>(null);
 
@@ -39,8 +39,8 @@ export const HeatConductionWidget = () => {
         lastTime = now;
         setPerformanceData({ fps: 1000 / deltaTime, deltaTime });
 
-        const result = await simulation.current?.runSimulation(numSteps);
-        simulation.current?.renderHeatMap(result!, ctxRef.current!);
+        await simulation.current?.runSimulation(numSteps);
+        simulation.current?.render();
 
         if (simulationState.current.isRunning) {
           requestAnimationFrame(update);
@@ -62,11 +62,18 @@ export const HeatConductionWidget = () => {
     simulationState.current.isRunning = false;
     setIsRunning(false);
 
-    simulation.current = new HeatConduction2D(width, height, dr, a, maxTemp);
+    simulation.current = new HeatConduction2D(
+      ctxRef.current!,
+      width,
+      height,
+      dr,
+      a,
+      maxTemp,
+    );
     await simulation.current.init();
 
-    const result = await simulation.current.runSimulation(1);
-    simulation.current.renderHeatMap(result!, ctxRef.current!);
+    await simulation.current.runSimulation(1);
+    simulation.current.render();
   };
 
   useEffect(() => {
@@ -75,17 +82,24 @@ export const HeatConductionWidget = () => {
       if (canvas === null) {
         return;
       }
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('webgpu');
       if (ctx === null) {
         return;
       }
       ctxRef.current = ctx;
 
-      simulation.current = new HeatConduction2D(width, height, dr, a, maxTemp);
+      simulation.current = new HeatConduction2D(
+        ctxRef.current!,
+        width,
+        height,
+        dr,
+        a,
+        maxTemp,
+      );
       await simulation.current.init();
 
-      const result = await simulation.current.runSimulation(1);
-      simulation.current.renderHeatMap(result!, ctxRef.current!);
+      await simulation.current.runSimulation(1);
+      simulation.current.render();
     }
 
     init();
@@ -103,13 +117,18 @@ export const HeatConductionWidget = () => {
         </p>
 
         <p className="m-2">
-          FPS: {performanceData.fps.toFixed(2)}, Delta Time:{' '}
-          {performanceData.deltaTime.toFixed(2)}
+          FPS: {performanceData.fps.toFixed(2)}, Frame Time:{' '}
+          {performanceData.deltaTime.toFixed(2)} ms
         </p>
       </div>
 
       <div className="m-2 rounded-lg overflow-hidden border-[1px] border-slate-400">
-        <canvas ref={canvasRef} width={width} height={height}></canvas>
+        <canvas
+          ref={canvasRef}
+          width={width}
+          height={height}
+          className="max-w-full"
+        ></canvas>
       </div>
 
       <div className="m-2 flex gap-2">
