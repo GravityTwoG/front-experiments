@@ -1,7 +1,7 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { getDevice } from './utils';
 
 export class HeatConduction2D {
-  // Constants
   private DR: number;
   private A: number;
   private MAX_TEMP: number;
@@ -118,13 +118,16 @@ export class HeatConduction2D {
   private getInitialState() {
     const state = new Float32Array(this.width * this.height);
 
+    const fn = (x: number) => (x * this.height) / this.width;
+
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const index = y * this.width + x;
-        if (this.isInShape(x, y) && y - x < 0) {
+
+        if (this.isInShape(x, y) && y > fn(x)) {
           state[index] = (Math.random() + 1) * this.MAX_TEMP;
         } else if (this.isInShape(x, y)) {
-          state[index] = this.MAX_TEMP / 2;
+          state[index] = this.MAX_TEMP * 0.6;
         } else {
           state[index] = 0;
         }

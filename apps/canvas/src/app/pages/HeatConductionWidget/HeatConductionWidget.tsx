@@ -4,11 +4,11 @@ import { Button } from '@front-experiments/ui/components/ui/button';
 
 import { HeatConduction2D } from './HeadConduction2D';
 
-const width = 300;
+const width = 600;
 const height = 300;
 const numSteps = 10;
 const dr = 1;
-const a = 1.5;
+const a = 0.5;
 const maxTemp = 6000;
 
 export const HeatConductionWidget = () => {
@@ -108,7 +108,7 @@ export const HeatConductionWidget = () => {
       </div>
 
       <div className="m-2 rounded-lg overflow-hidden border-[1px] border-slate-400">
-        <canvas ref={canvasRef} width={300} height={300}></canvas>
+        <canvas ref={canvasRef} width={width} height={height}></canvas>
       </div>
 
       <div className="m-2 flex gap-2">
