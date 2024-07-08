@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@front-experiments/ui/components/ui/button';
+import { Container } from '@front-experiments/ui/components/ui/Container';
 
 import { HeatConduction2D } from './HeadConduction2D';
 
@@ -95,7 +96,7 @@ export const HeatConductionWidget = () => {
   }, [canvasRef]);
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col justify-center items-center">
+    <Container className="py-4 flex flex-col justify-center items-center">
       <div>
         <p className="m-2">
           Heat Conduction: A = {a}, DR (DX, DY) = {dr}, MAX_TEMP = {maxTemp}
@@ -128,6 +129,6 @@ export const HeatConductionWidget = () => {
           {isRunning ? 'Pause' : 'Start'}
         </Button>
       </div>
-    </div>
+    </Container>
   );
 };

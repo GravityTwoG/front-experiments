@@ -12,7 +12,7 @@ import {
 export function App() {
   return (
     <div className="max-w-5xl mx-auto">
-      <NavigationMenu className="p-1">
+      <NavigationMenu className="p-1 mx-auto">
         <NavigationMenuList>
           {routes.map((route) => (
             <NavigationMenuItem key={route.path}>

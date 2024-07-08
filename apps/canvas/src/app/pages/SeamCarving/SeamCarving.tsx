@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Input } from '@front-experiments/ui/components/ui/input';
 import { Label } from '@front-experiments/ui/components/ui/label';
+import { Container } from '@front-experiments/ui/components/ui/Container';
 import { seamCarve } from './seamCarvingSim';
 import { copyMatrix } from './matrix';
 
@@ -137,7 +138,7 @@ export const SeamCarving = () => {
   }, [image, seamsToRemove]);
 
   return (
-    <div>
+    <Container className="py-4">
       <div className="max-w-3xl mx-auto">
         <div>
           <Label htmlFor="image">Image</Label>
@@ -176,6 +177,6 @@ export const SeamCarving = () => {
           ></canvas>
         </div>
       </div>
-    </div>
+    </Container>
   );
 };
