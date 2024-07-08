@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 
 export default defineConfig({
-  cacheDir: '../../node_modules/.vite/physics-simulation',
+  cacheDir: '../../node_modules/.vite/canvas',
 
   server: {
     port: 4200,
