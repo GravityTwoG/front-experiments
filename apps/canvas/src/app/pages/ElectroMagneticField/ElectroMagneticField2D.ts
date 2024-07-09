@@ -23,7 +23,9 @@ export class ElectroMagneticField2D {
   chargeMax = 1.6e-19;
   chargeMin = 0.3 * this.chargeMax;
 
-  mass = 9.11e-31;
+  massMax = 9.11e-31;
+  massMin = 0.3 * this.massMax;
+
   dt = 1.1;
 
   electricFieldEnabled = true;
@@ -191,9 +193,10 @@ export class ElectroMagneticField2D {
       const vy = randInRange(this.vMin, this.vMax) * randSign();
 
       const charge = randInRange(this.chargeMin, this.chargeMax) * randSign();
+      const mass = randInRange(this.massMin, this.massMax);
       const isPhysical = 1;
 
-      this.setParticle(state, i, x, y, vx, vy, charge, this.mass, isPhysical);
+      this.setParticle(state, i, x, y, vx, vy, charge, mass, isPhysical);
     }
     this.chargesCount = Math.trunc(this.maxChargesCount / 2);
 
@@ -274,8 +277,10 @@ export class ElectroMagneticField2D {
           continue;
         }
 
-        var r = vec2(p.x - q.x, p.y - q.y);
-        let Eq: vec2<f32> = q.charge*r / (r*r*r+0.1);
+        let r = vec2(p.x - q.x - 0.5, p.y - q.y - 0.5);
+        // we assume that distance cannot be less than 1
+        let r2 = max(length(r) * length(r), 1.0);
+        let Eq: vec2<f32> = q.charge*normalize(r) / r2;
 
         E += Eq;
       }
@@ -475,6 +480,8 @@ export class ElectroMagneticField2D {
     const vx = randInRange(this.vMin, this.vMax) * randSign();
     const vy = randInRange(this.vMin, this.vMax) * randSign();
     const charge = randInRange(this.chargeMin, this.chargeMax) * randSign();
+    const mass = randInRange(this.massMin, this.massMax);
+
     const isPhysical = 1;
 
     this.setParticle(
@@ -485,7 +492,7 @@ export class ElectroMagneticField2D {
       vx,
       vy,
       charge,
-      this.mass,
+      mass,
       isPhysical,
     );
 
@@ -543,7 +550,7 @@ export class ElectroMagneticField2D {
   }
 
   // Main function to set up and run the simulation
-  async runSimulation(numSteps: number) {
+  runSimulation(numSteps: number) {
     this.writeUniforms();
 
     // Run simulation

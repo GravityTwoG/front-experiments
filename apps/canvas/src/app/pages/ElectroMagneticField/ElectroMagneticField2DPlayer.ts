@@ -53,7 +53,7 @@ export class ElectroMagneticField2DPlayer {
         lastTime = now;
         cb({ fps: 1000 / deltaTime, deltaTime });
 
-        await this.simulation.runSimulation(numSteps);
+        this.simulation.runSimulation(numSteps);
         this.simulation.render();
 
         requestAnimationFrame(update);
