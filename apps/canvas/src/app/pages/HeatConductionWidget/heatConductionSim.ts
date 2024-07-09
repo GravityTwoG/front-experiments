@@ -42,7 +42,7 @@ const dTemp = (state: number[][], x: number, y: number) => {
 export const updateState = (
   state: number[][],
   nextState: number[][],
-  dt: number
+  dt: number,
 ) => {
   for (let y = 0; y < state.length; y++) {
     for (let x = 0; x < state[y].length; x++) {

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@front-experiments/ui/components/ui/button';
 import { Container } from '@front-experiments/ui/components/ui/Container';
 
-import { HeatConduction2D } from './HeadConduction2D';
+import { HeatConduction2DPlayer } from './HeatConduction2DPlayer';
 
 const width = 1200;
 const height = 600;
@@ -14,11 +14,8 @@ const maxTemp = 6000;
 
 export const HeatConductionWidget = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ctxRef = useRef<GPUCanvasContext | null>(null);
+  const simulationPlayer = useRef<HeatConduction2DPlayer | null>(null);
 
-  const simulation = useRef<HeatConduction2D | null>(null);
-
-  const simulationState = useRef<{ isRunning: boolean }>({ isRunning: false });
   const [isRunning, setIsRunning] = useState(false);
 
   const [performanceData, setPerformanceData] = useState<{
@@ -27,53 +24,18 @@ export const HeatConductionWidget = () => {
   }>({ fps: 0, deltaTime: 0 });
 
   const startSimulation = async () => {
-    simulationState.current.isRunning = true;
     setIsRunning(true);
-
-    let lastTime = performance.now();
-
-    async function update() {
-      try {
-        const now = performance.now();
-        const deltaTime = now - lastTime;
-        lastTime = now;
-        setPerformanceData({ fps: 1000 / deltaTime, deltaTime });
-
-        await simulation.current?.runSimulation(numSteps);
-        simulation.current?.render();
-
-        if (simulationState.current.isRunning) {
-          requestAnimationFrame(update);
-        }
-      } catch (error) {
-        console.error('An error occurred:', error);
-      }
-    }
-
-    requestAnimationFrame(update);
+    simulationPlayer.current?.play(numSteps, setPerformanceData);
   };
 
   const pauseSimulation = () => {
-    simulationState.current.isRunning = false;
     setIsRunning(false);
+    simulationPlayer.current?.pause();
   };
 
   const resetSimulation = async () => {
-    simulationState.current.isRunning = false;
     setIsRunning(false);
-
-    simulation.current = new HeatConduction2D(
-      ctxRef.current!,
-      width,
-      height,
-      dr,
-      a,
-      maxTemp,
-    );
-    await simulation.current.init();
-
-    await simulation.current.runSimulation(1);
-    simulation.current.render();
+    simulationPlayer.current?.reset();
   };
 
   useEffect(() => {
@@ -82,30 +44,23 @@ export const HeatConductionWidget = () => {
       if (canvas === null) {
         return;
       }
-      const ctx = canvas.getContext('webgpu');
-      if (ctx === null) {
-        return;
-      }
-      ctxRef.current = ctx;
 
-      simulation.current = new HeatConduction2D(
-        ctxRef.current!,
+      simulationPlayer.current = new HeatConduction2DPlayer(
+        canvas,
         width,
         height,
         dr,
         a,
         maxTemp,
       );
-      await simulation.current.init();
 
-      await simulation.current.runSimulation(1);
-      simulation.current.render();
+      await simulationPlayer.current.reset();
     }
 
     init();
 
     return () => {
-      simulationState.current.isRunning = false;
+      simulationPlayer.current?.pause();
     };
   }, [canvasRef]);
 
