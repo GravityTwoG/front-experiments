@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { getDevice } from './utils';
+import { getDevice } from '../../utils';
 
 export class HeatConduction2D {
   private DR: number;
