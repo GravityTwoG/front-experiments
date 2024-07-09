@@ -1,7 +1,7 @@
 import { ElectroMagneticField2D } from './ElectroMagneticField2D';
 
 export class ElectroMagneticField2DPlayer {
-  private simulation: ElectroMagneticField2D;
+  simulation: ElectroMagneticField2D;
 
   private width: number;
   private height: number;

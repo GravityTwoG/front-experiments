@@ -12,19 +12,27 @@ function randSign() {
 export class ElectroMagneticField2D {
   private DR: number;
 
-  private B = 5e-4; // Tsl
-  private E = [2e3, 1e-1]; // V/m
-  private lambda = 1e-3; // m
-  private C = 3e8; // Speed of light, m/s
+  B = 5e-4; // Tsl
+  E = [2e3, 1e-1]; // V/m
+  lambda = 1e-3; // m
+  C = 3e8; // Speed of light, m/s
 
-  private vMax = 8e6 / this.C;
-  private vMin = 0.4 * this.vMax;
+  vMax = 8e6 / this.C;
+  vMin = 0.4 * this.vMax;
 
-  private maxCharge = 1.6e-19;
-  private minCharge = 0.3 * this.maxCharge;
+  chargeMax = 1.6e-19;
+  chargeMin = 0.3 * this.chargeMax;
+
+  mass = 9.11e-31;
+  dt = 1.1;
+
+  electricFieldEnabled = true;
+  magneticFieldEnabled = true;
+
   private maxChargesCount = 30;
-  private mass = 9.11e-31;
-  private dt = 1.1;
+
+  private chargeIndex = 0;
+  private chargesCount = 0;
 
   private width: number;
   private height: number;
@@ -75,7 +83,8 @@ export class ElectroMagneticField2D {
   private initComputePipeline() {
     const initialState = this.getInitialState();
 
-    const chargesByteSize = this.maxChargesCount * 28;
+    const particleSize = 7 * 4;
+    const chargesByteSize = this.maxChargesCount * particleSize;
 
     this.inputBuffer = this.device.createBuffer({
       size: chargesByteSize,
@@ -95,35 +104,12 @@ export class ElectroMagneticField2D {
 
     this.device.queue.writeBuffer(this.inputBuffer, 0, initialState);
 
-    const uniformBufferSize = 48;
     this.uniformBuffer = this.device.createBuffer({
-      size: uniformBufferSize,
+      size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    const uniformData = new ArrayBuffer(uniformBufferSize);
-    let offset = 0;
-    new Uint32Array(uniformData, offset, 2).set([this.width, this.height]);
-    offset += 4 * 2;
-
-    new Float32Array(uniformData, offset, 6).set([
-      this.dt,
-      this.B,
-      this.E[0],
-      this.E[1],
-      this.lambda,
-      this.C,
-    ]);
-    offset += 4 * 6;
-
-    const isElectricFieldEnabled = 1;
-    new Uint32Array(uniformData, offset, 2).set([
-      isElectricFieldEnabled,
-      this.maxChargesCount,
-    ]);
-    offset += 4 * 2;
-
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+    this.writeUniforms();
 
     // Create shader module for the compute shader
     const shaderModule = this.device.createShaderModule({
@@ -135,7 +121,7 @@ export class ElectroMagneticField2D {
       layout: 'auto',
       compute: {
         module: shaderModule,
-        entryPoint: 'main',
+        entryPoint: 'computeMain',
       },
     });
 
@@ -197,33 +183,48 @@ export class ElectroMagneticField2D {
   private getInitialState() {
     const state = new ArrayBuffer(this.maxChargesCount * 7 * 4);
 
-    for (let i = 0; i < this.maxChargesCount; i++) {
+    for (let i = 0; i < Math.trunc(this.maxChargesCount / 2); i++) {
       const x = randInRange(0, this.width);
       const y = randInRange(0, this.height);
-
-      const charge = randInRange(this.minCharge, this.maxCharge) * randSign();
 
       const vx = randInRange(this.vMin, this.vMax) * randSign();
       const vy = randInRange(this.vMin, this.vMax) * randSign();
 
+      const charge = randInRange(this.chargeMin, this.chargeMax) * randSign();
       const isPhysical = 1;
 
-      new Float32Array(state, i * 7 * 4, 6).set([
-        x,
-        y,
-        vx,
-        vy,
-        charge,
-        this.mass,
-      ]);
-      new Uint32Array(state, i * 7 * 4 + 6 * 4, 1).set([isPhysical]);
+      this.setParticle(state, i, x, y, vx, vy, charge, this.mass, isPhysical);
     }
+    this.chargesCount = Math.trunc(this.maxChargesCount / 2);
 
     return state;
   }
 
-  private isInMagneticField = `
-    fn isInMagneticField(x: f32, y: f32) -> bool {
+  private setParticle(
+    buffer: ArrayBuffer,
+    idx: number,
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    charge: number,
+    mass: number,
+    isPhysical: number,
+  ) {
+    const particleSize = 7 * 4;
+    const offset = idx * particleSize;
+    new Float32Array(buffer, offset, 6).set([x, y, vx, vy, charge, mass]);
+    new Uint32Array(buffer, offset + 6 * 4, 1).set([isPhysical]);
+  }
+
+  private isInElectroMagneticField = `
+    fn isInElectroMagneticField(x: f32, y: f32) -> bool {
+      if (uniforms.electricFieldEnabled == 0 && 
+        uniforms.magneticFieldEnabled == 0) {
+
+        return false;
+      }
+
       let padding = f32(uniforms.width / 5);
       
       return (x < f32(uniforms.width) - padding && 
@@ -256,11 +257,12 @@ export class ElectroMagneticField2D {
       lambda: f32,  
       C: f32,
       electricFieldEnabled: u32,
+      magneticFieldEnabled: u32,
       chargesCount: u32,
     }
     @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-    ${this.isInMagneticField}
+    ${this.isInElectroMagneticField}
 
     fn dF(p: Particle, idx: u32) -> vec4<f32> {
       let k = p.charge * uniforms.lambda / (p.mass * uniforms.C);
@@ -273,42 +275,36 @@ export class ElectroMagneticField2D {
         }
 
         var r = vec2(p.x - q.x, p.y - q.y);
-        let Eq = q.charge*r / (r*r*r+0.1);
+        let Eq: vec2<f32> = q.charge*r / (r*r*r+0.1);
 
-        E += k * Eq;
+        E += Eq;
       }
+      E.x *= k / uniforms.C;  
+      E.y *= k / uniforms.C;
 
-      if (isInMagneticField(p.x, p.y)) {
-        let B = uniforms.B * k;
-        E += vec2(
-          uniforms.E.x * k / uniforms.C, 
-          uniforms.E.y * k / uniforms.C
-        );
-
-        if (uniforms.electricFieldEnabled == 0) {
-          E.x = 0;
-          E.y = 0;
+      var B: f32 = 0;
+      if (isInElectroMagneticField(p.x, p.y)) {
+        if (uniforms.magneticFieldEnabled == 1) {
+           B = uniforms.B * k;
         }
-
-        return vec4<f32>(
-          p.vx,
-          p.vy,
-          E.x + B * p.vy,
-          E.y - B * p.vx
-        );
+        if (uniforms.electricFieldEnabled == 1) {
+          E += vec2(
+            uniforms.E.x * k / uniforms.C, 
+            uniforms.E.y * k / uniforms.C
+          );
+        }
       }
-
       return vec4<f32>(
         p.vx,
         p.vy,
-        E.x,
-        E.y
+        E.x + B * p.vy,
+        E.y - B * p.vx
       );
     }
 
     // compute shader
     @compute @workgroup_size(16)
-    fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
       let idx = global_id.x;
       if (idx >= uniforms.chargesCount) {
         return;
@@ -317,18 +313,10 @@ export class ElectroMagneticField2D {
       var p = input[idx];
       if (p.isPhysical == 0) {
         return;
-      }  
+      }
 
       // RK4 method for solving ODE
-      var p2 = Particle(
-        p.x,
-        p.y,
-        p.vx,
-        p.vy,
-        p.charge,
-        p.mass,
-        p.isPhysical
-      );
+      var p2 = p;
       
       let d1 = dF(p2, idx);
       p2.x = p.x + d1.x * uniforms.dt / 2.0;
@@ -368,11 +356,11 @@ export class ElectroMagneticField2D {
         p.vy = -abs(p.vy)*0.9;
         p.y = f32(uniforms.height);
       }
-
       if (p.y < 0.0) {
         p.vy = abs(p.vy)*0.9;
         p.y = 0.0;
       }
+
       output[idx] = p;
     }
   `;
@@ -398,6 +386,7 @@ export class ElectroMagneticField2D {
       lambda: f32, 
       C: f32,
       electricFieldEnabled: u32,
+      magneticFieldEnabled: u32,
       chargesCount: u32,
     }
 
@@ -435,7 +424,7 @@ export class ElectroMagneticField2D {
       return output;
     }
 
-    ${this.isInMagneticField}
+    ${this.isInElectroMagneticField}
 
     @fragment
     fn fragmentMain(@location(0) coords: vec2f) -> @location(0) vec4f {
@@ -460,12 +449,12 @@ export class ElectroMagneticField2D {
 
       var color = vec4f(0.0, 0.0, 0.0, 1.0);
 
-      if (isInMagneticField(f32(x), f32(y))) {
+      if (isInElectroMagneticField(f32(x), f32(y))) {
         let blueViolet = vec4f(0.5, 0.0, 1.0, 0.2);
         color = mix(color, blueViolet, 0.3);
       }
 
-      let brightness = abs(E) / ${this.maxCharge * this.DR} * 100;
+      let brightness = abs(E) / ${this.chargeMax * this.DR} * 100;
       if (E > 0.0) {
         color.r = max(color.r, brightness);
       } else {
@@ -476,8 +465,87 @@ export class ElectroMagneticField2D {
     }
   `;
 
+  addParticle(x: number, y: number) {
+    if (this.chargesCount >= this.maxChargesCount) {
+      return;
+    }
+
+    const particle = new ArrayBuffer(7 * 4);
+
+    const vx = randInRange(this.vMin, this.vMax) * randSign();
+    const vy = randInRange(this.vMin, this.vMax) * randSign();
+    const charge = randInRange(this.chargeMin, this.chargeMax) * randSign();
+    const isPhysical = 1;
+
+    this.setParticle(
+      particle,
+      0,
+      x * this.width,
+      y * this.height,
+      vx,
+      vy,
+      charge,
+      this.mass,
+      isPhysical,
+    );
+
+    this.device.queue.writeBuffer(
+      this.outputBuffer,
+      this.chargeIndex * 7 * 4,
+      particle,
+    );
+    this.device.queue.writeBuffer(
+      this.inputBuffer,
+      this.chargeIndex * 7 * 4,
+      particle,
+    );
+    this.chargesCount++;
+    this.chargeIndex++;
+
+    if (this.chargesCount >= this.maxChargesCount) {
+      this.chargesCount = this.maxChargesCount - 1;
+    }
+    if (this.chargeIndex >= this.maxChargesCount) {
+      this.chargeIndex = 0;
+    }
+  }
+
+  removeParticles() {
+    this.chargesCount = 0;
+    this.chargeIndex = 0;
+  }
+
+  private writeUniforms() {
+    const uniformData = new ArrayBuffer(this.uniformBuffer.size);
+
+    let offset = 0;
+    new Uint32Array(uniformData, offset, 2).set([this.width, this.height]);
+    offset += 4 * 2;
+
+    new Float32Array(uniformData, offset, 6).set([
+      this.dt,
+      this.B,
+      this.E[0],
+      this.E[1],
+      this.lambda,
+      this.C,
+    ]);
+    offset += 4 * 6;
+
+    new Uint32Array(uniformData, offset, 4).set([
+      this.electricFieldEnabled ? 1 : 0,
+      this.magneticFieldEnabled ? 1 : 0,
+      this.chargesCount,
+    ]);
+    offset += 4 * 3;
+
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+  }
+
   // Main function to set up and run the simulation
   async runSimulation(numSteps: number) {
+    this.writeUniforms();
+
     // Run simulation
     const commandEncoder = this.device.createCommandEncoder();
     const passEncoder = commandEncoder.beginComputePass();
