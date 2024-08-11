@@ -13,7 +13,7 @@ export function App() {
   return (
     <div className="max-w-5xl mx-auto">
       <NavigationMenu className="p-1 mx-auto">
-        <NavigationMenuList>
+        <NavigationMenuList className='flex-wrap'>
           {routes.map((route) => (
             <NavigationMenuItem key={route.path}>
               <Link to={route.path}>
