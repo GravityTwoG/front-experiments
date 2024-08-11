@@ -5,7 +5,7 @@ import { Container } from '@front-experiments/ui/components/ui/Container';
 import { ShaderPlayer } from './ShaderPlayer';
 
 const width = 640;
-const height = 640;
+const height = 840;
 
 export const ImageShaderWidget = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);

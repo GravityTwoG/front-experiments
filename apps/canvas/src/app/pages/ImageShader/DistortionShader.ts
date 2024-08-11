@@ -133,6 +133,7 @@ export class DistortionShader {
     @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
     const aspect: vec2<f32> = vec2(1, ${this.context.canvas.width / this.context.canvas.height});
+    const textureAspect = f32(${this.textureWidth}) / f32(${this.textureHeight});
     const maxRadius: f32 = 0.25;
 
     struct VertexOutput {
@@ -163,19 +164,17 @@ export class DistortionShader {
       var output : VertexOutput;
       output.Position = vec4(pos[VertexIndex], 0.0, 1.0);
 
-      // Calculate aspect ratios
-      let textureAspect = f32(${this.textureWidth}) / f32(${this.textureHeight});
-      let viewportAspect = f32(${this.context.canvas.width}) / f32(${this.context.canvas.height});
+      
 
       // Adjust UV based on aspect ratios
       var adjustedUV = uv[VertexIndex];
-      if (textureAspect > viewportAspect) {
+      if (textureAspect > aspect.y) {
         // Texture is wider, adjust vertically
-        let scale = viewportAspect / textureAspect;
+        let scale = aspect.y / textureAspect;
         adjustedUV.y = (adjustedUV.y - 0.5) * scale + 0.5;
       } else {
         // Texture is taller, adjust horizontally
-        let scale = viewportAspect / textureAspect;
+        let scale = aspect.y / textureAspect;
         adjustedUV.x = (adjustedUV.x - 0.5) * scale + 0.5;
       }
 
@@ -199,7 +198,7 @@ export class DistortionShader {
 
       let shading = gDistance * 5.0;
 
-      return vec4f(r + shading, g + shading, b + shading, 1);
+      return vec4f(r + shading, g + shading, b + shading, 1.0);
     }
 
     // get color from texture
