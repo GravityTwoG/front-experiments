@@ -1,4 +1,4 @@
-import { getDevice, loadImageBitmap } from '../../utils';
+import { ImageShader } from './ImageShader';
 
 type UniformData = {
   t: number;
@@ -8,76 +8,34 @@ type UniformData = {
   };
 };
 
-export class DistortionShader {
-  private context: GPUCanvasContext;
-  private format: GPUTextureFormat;
+export class DistortionShader extends ImageShader {
+  private uniformBuffer: GPUBuffer;
 
-  private device: GPUDevice = null!;
+  protected renderPipeline: GPURenderPipeline = null!;
+  protected renderBindGroup: GPUBindGroup = null!;
 
-  private uniformBuffer: GPUBuffer = null!;
-
-  private texture: GPUTexture = null!;
-
-  private textureWidth = 0;
-  private textureHeight = 0;
-
-  private renderPipeline: GPURenderPipeline = null!;
-  private renderBindGroup: GPUBindGroup = null!;
-
-  constructor(context: GPUCanvasContext) {
-    this.context = context;
-    this.format = navigator.gpu.getPreferredCanvasFormat();
-  }
-
-  async init() {
-    this.device = await getDevice();
-
-    this.context.configure({
-      device: this.device,
-      format: this.format,
-    });
+  constructor(
+    width: number,
+    height: number,
+    device: GPUDevice,
+    format: GPUTextureFormat,
+  ) {
+    super(width, height, device, format);
 
     const uniformBufferSizeInBytes = 16; // 1 f32, 1 vec2<f32>, and aligned by 16
     this.uniformBuffer = this.device.createBuffer({
       size: uniformBufferSizeInBytes,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+  }
 
-    const url = '/spider-robot.jpeg';
-    const source = await loadImageBitmap(url);
-
-    this.textureWidth = source.width;
-    this.textureHeight = source.height;
-
-    this.texture = this.device.createTexture({
-      label: url,
-      format: 'rgba8unorm',
-      size: [source.width, source.height],
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    this.device.queue.copyExternalImageToTexture(
-      { source },
-      { texture: this.texture },
-      { width: source.width, height: source.height },
-    );
+  async init(inputTexture: GPUTexture) {
+    await super.init(inputTexture);
 
     this.initRenderPipeline();
   }
 
-  private writeUniforms(data: UniformData) {
-    const uniformData = new ArrayBuffer(16);
-    const f32View = new Float32Array(uniformData, 0, 4);
-    f32View[0] = data.t;
-    f32View[2] = data.center.x;
-    f32View[3] = data.center.y;
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
-  }
-
-  private initRenderPipeline() {
+  protected initRenderPipeline() {
     // Create render pipeline
     const renderShaderModule = this.device.createShaderModule({
       code: this.getRenderShaderCode(),
@@ -122,9 +80,8 @@ export class DistortionShader {
     });
   }
 
-  private getRenderShaderCode = () => `
-    @group(0) @binding(0) var mySampler: sampler;
-    @group(0) @binding(1) var myTexture: texture_2d<f32>;
+  protected getStructuresDefinition = () => `
+    ${super.getStructuresDefinition()}
 
     struct Uniforms {
       t: f32, // time
@@ -132,56 +89,10 @@ export class DistortionShader {
     };
     @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-    const aspect: vec2<f32> = vec2(1, ${this.context.canvas.width / this.context.canvas.height});
-    const textureAspect = f32(${this.textureWidth}) / f32(${this.textureHeight});
     const maxRadius: f32 = 0.25;
+  `;
 
-    struct VertexOutput {
-      @builtin(position) Position : vec4f,
-      @location(0) fragUV : vec2f,
-    }
-
-    @vertex
-    fn vertexMain(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
-      const pos = array(
-        vec2( 1.0,  1.0),
-        vec2( 1.0, -1.0),
-        vec2(-1.0, -1.0),
-        vec2( 1.0,  1.0),
-        vec2(-1.0, -1.0),
-        vec2(-1.0,  1.0),
-      );
-
-      const uv = array(
-        vec2(1.0, 0.0),
-        vec2(1.0, 1.0),
-        vec2(0.0, 1.0),
-        vec2(1.0, 0.0),
-        vec2(0.0, 1.0),
-        vec2(0.0, 0.0),
-      );
-
-      var output : VertexOutput;
-      output.Position = vec4(pos[VertexIndex], 0.0, 1.0);
-
-      
-
-      // Adjust UV based on aspect ratios
-      var adjustedUV = uv[VertexIndex];
-      if (textureAspect > aspect.y) {
-        // Texture is wider, adjust vertically
-        let scale = aspect.y / textureAspect;
-        adjustedUV.y = (adjustedUV.y - 0.5) * scale + 0.5;
-      } else {
-        // Texture is taller, adjust horizontally
-        let scale = aspect.y / textureAspect;
-        adjustedUV.x = (adjustedUV.x - 0.5) * scale + 0.5;
-      }
-
-      output.fragUV = adjustedUV;
-      return output;
-    }
-
+  protected getFragmentShaderCode = () => `
     @fragment
     fn fragmentMain(@location(0) fragUV : vec2f) -> @location(0) vec4f {
       var dir = uniforms.center - fragUV;
@@ -222,16 +133,27 @@ export class DistortionShader {
     }
   `;
 
-  render(data: UniformData) {
-    this.writeUniforms(data);
+  private writeUniforms(data: UniformData) {
+    const uniformData = new ArrayBuffer(16);
+    const f32View = new Float32Array(uniformData, 0, 4);
+    f32View[0] = data.t;
+    f32View[2] = data.center.x;
+    f32View[3] = data.center.y;
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+  }
 
+  setData(data: UniformData) {
+    this.writeUniforms(data);
+  }
+
+  async render(outputTexture: GPUTexture) {
     // Get the current texture from the canvas context and
     // set it as the texture to render to.
     const renderPassDescriptor = {
       label: 'our basic canvas renderPass',
       colorAttachments: [
         {
-          view: this.context.getCurrentTexture().createView(),
+          view: outputTexture.createView(),
           clearValue: [0, 0, 0, 0],
           loadOp: 'clear',
           storeOp: 'store',

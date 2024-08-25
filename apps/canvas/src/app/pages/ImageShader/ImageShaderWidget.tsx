@@ -17,8 +17,9 @@ export const ImageShaderWidget = () => {
       if (canvas === null) {
         return;
       }
-      player = new ShaderPlayer(canvas, width, height);
+      player = new ShaderPlayer(canvas);
 
+      await player.init();
       await player.reset();
       player.play((perfData) => {
         // console.log(perfData);
